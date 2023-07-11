@@ -1,0 +1,12 @@
+apiVersion: db.sap-redhat.io/v1alpha1
+kind: HanaExpress
+metadata:
+#  labels:
+#    app.kubernetes.io/name: hanaexpress
+#    app.kubernetes.io/instance: hanaexpress-sample
+#    app.kubernetes.io/part-of: sap-hana-express-operator
+#    app.kubernetes.io/managed-by: kustomize
+#    app.kubernetes.io/created-by: sap-hana-express-operator
+  name: hanaexpress-sample
+spec:
+  # TODO(user): Add fields here

@@ -209,6 +209,45 @@ func (r *HanaExpressReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	foundSvc := &corev1.Service{}
+	err = r.Get(ctx, types.NamespacedName{Name: hanaExpress.Name, Namespace: hanaExpress.Namespace}, foundSvc)
+	if err != nil && apierrors.IsNotFound(err) {
+		// Define a new statefulset
+		svc, err := r.clusterServiceForHanaExpress(hanaExpress)
+		if err != nil {
+			log.Error(err, "Failed to define new Serivce for HanaExpress")
+
+			// The following implementation will update the status
+			meta.SetStatusCondition(&hanaExpress.Status.Conditions, metav1.Condition{Type: typeAvailableHanaExpress,
+				Status: metav1.ConditionFalse, Reason: "Reconciling",
+				Message: fmt.Sprintf("Failed to create Service for the custom resource (%s): (%s)", hanaExpress.Name, err)})
+
+			if err := r.Status().Update(ctx, hanaExpress); err != nil {
+				log.Error(err, "Failed to update HanaExpress status")
+				return ctrl.Result{}, err
+			}
+
+			return ctrl.Result{}, err
+		}
+
+		log.Info("Creating a new Service",
+			"Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
+		if err = r.Create(ctx, svc); err != nil {
+			log.Error(err, "Failed to create new Service",
+				"Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
+			return ctrl.Result{}, err
+		}
+
+		// Service created successfully
+		// We will requeue the reconciliation so that we can ensure the state
+		// and move forward for the next operations
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
+	} else if err != nil {
+		log.Error(err, "Failed to get Service")
+		// Let's return the error for the reconciliation be re-trigged again
+		return ctrl.Result{}, err
+	}
+
 	size := int32(1)
 	if *found.Spec.Replicas != size {
 		found.Spec.Replicas = &size
@@ -236,8 +275,6 @@ func (r *HanaExpressReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		return ctrl.Result{Requeue: true}, nil
 	}
-
-	// TODO: allow users to resize pvc
 
 	// The following implementation will update the status
 	meta.SetStatusCondition(&hanaExpress.Status.Conditions, metav1.Condition{Type: typeAvailableHanaExpress,
@@ -461,6 +498,60 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 		return nil, err
 	}
 	return sts, nil
+}
+
+// clusterServiceForHanaExpress returns a HanaExpress cluster service object
+func (r *HanaExpressReconciler) clusterServiceForHanaExpress(
+	hanaExpress *dbv1alpha1.HanaExpress) (*corev1.Service, error) {
+
+	ls := labelsForHanaExpress(hanaExpress.Name)
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hanaExpress.Name,
+			Namespace: hanaExpress.Namespace,
+			Labels:    ls,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: ls,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "port-1",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       39013,
+					TargetPort: intstr.FromInt(39013),
+				},
+				{
+					Name:       "port-2",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       39017,
+					TargetPort: intstr.FromInt(39017),
+				},
+				{
+					Name:       "port-3",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       39041,
+					TargetPort: intstr.FromInt(39041),
+				},
+				{
+					Name:       "port-4",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       59013,
+					TargetPort: intstr.FromInt(59013),
+				},
+				{
+					Name:       "port-5",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       8090,
+					TargetPort: intstr.FromInt(8090),
+				},
+			},
+		},
+	}
+	if err := ctrl.SetControllerReference(hanaExpress, svc, r.Scheme); err != nil {
+		return nil, err
+	}
+
+	return svc, nil
 }
 
 // labelsForHanaExpress returns the labels for selecting the resources

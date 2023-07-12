@@ -8,20 +8,19 @@ metadata:
           "apiVersion": "db.sap-redhat.io/v1alpha1",
           "kind": "HanaExpress",
           "metadata": {
-            "labels": {
-              "app.kubernetes.io/created-by": "sap-hana-express-operator",
-              "app.kubernetes.io/instance": "hanaexpress-sample",
-              "app.kubernetes.io/managed-by": "kustomize",
-              "app.kubernetes.io/name": "hanaexpress",
-              "app.kubernetes.io/part-of": "sap-hana-express-operator"
-            },
             "name": "hanaexpress-sample"
           },
-          "spec": null
+          "spec": {
+            "credential": {
+              "key": "hxepasswd.json",
+              "name": "hxepasswd"
+            },
+            "pvcSize": "1Gi"
+          }
         }
       ]
     capabilities: Basic Install
-    createdAt: "2023-07-10T13:46:06Z"
+    createdAt: "2023-07-12T19:14:54Z"
     operators.operatorframework.io/builder: operator-sdk-v1.30.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
   name: sap-hana-express-operator.v0.0.1
@@ -49,6 +48,33 @@ spec:
     spec:
       clusterPermissions:
       - rules:
+        - apiGroups:
+          - apps
+          resources:
+          - statefulsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+          - watch
         - apiGroups:
           - db.sap-redhat.io
           resources:
@@ -159,8 +185,8 @@ spec:
                 - /manager
                 env:
                 - name: HANAEXPRESS_IMAGE
-                  value: docker.io/saplabs/hanaexpress@sha256:650a46e2a76fe3c58adfc61997c18ff71275478c314e5fbae0e160313db93e1c
-                image: controller:latest
+                  value: docker.io/saplabs/hanaexpress:2.00.061.00.20220519.1
+                image: quay.io/redhat-sap-cop/sap-hanaexpress-operator:0.1.4
                 livenessProbe:
                   httpGet:
                     path: /healthz

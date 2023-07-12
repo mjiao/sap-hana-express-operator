@@ -137,10 +137,6 @@ func (r *HanaExpressReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			// the Kubernetes API to remove the custom resource.
 			r.doFinalizerOperationsForHanaExpress(hanaExpress)
 
-			// TODO(user): If you add operations to the doFinalizerOperationsForHanaExpress method
-			// then you need to ensure that all worked fine before deleting and updating the Downgrade status
-			// otherwise, you should requeue here.
-
 			if err := r.Get(ctx, req.NamespacedName, hanaExpress); err != nil {
 				log.Error(err, "Failed to re-fetch HanaExpress")
 				return ctrl.Result{}, err
@@ -291,22 +287,11 @@ func (r *HanaExpressReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 // doFinalizerOperationsForHanaExpress will perform the required operations before delete the CR.
 func (r *HanaExpressReconciler) doFinalizerOperationsForHanaExpress(cr *dbv1alpha1.HanaExpress) {
-	// TODO(user): Add the cleanup steps that the operator
-	// needs to do before the CR can be deleted. Examples
-	// of finalizers include performing backups and deleting
-	// resources that are not owned by this CR, like a PVC.
-
-	// Note: It is not recommended to use finalizers with the purpose of delete resources which are
-	// created and managed in the reconciliation. These ones, such as the Deployment created on this reconcile,
-	// are defined as depended on the custom resource. See that we use the method ctrl.SetControllerReference.
-	// to set the ownerRef which means that the StatefulSet will be deleted by the Kubernetes API.
-	// More info: https://kubernetes.io/docs/tasks/administer-cluster/use-cascading-deletion/
-
-	// The following implementation will raise an event
 	r.Recorder.Event(cr, "Warning", "Deleting",
 		fmt.Sprintf("Custom Resource %s is being deleted from the namespace %s",
 			cr.Name,
 			cr.Namespace))
+
 }
 
 // statefulSetForHanaExpress returns a HanaExpress StatefulSet object
@@ -465,7 +450,7 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
-							Command: []string{"/run_hana", "--passwords-url", "file:///hana/mounts/hxepasswd.json", "--agree-to-sap-license"},
+							Command: []string{"/run_hana", "--passwords-url", "file:///hana/mounts/" + hanaExpress.Spec.Credential.Key, "--agree-to-sap-license"},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "hxepasswd",

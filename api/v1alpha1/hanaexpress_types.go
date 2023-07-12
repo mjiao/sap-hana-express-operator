@@ -20,11 +20,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// Credential contains the credential information intended to be used
 type Credential struct {
 	// +kubebuilder:validation:Required
+	// The Name defines the predefined Kubernetes secret name for initilizing the users of the Hana Express DB
 	Name string `json:"name"`
+
+	// +kubebuilder:validation:Required
+	// The key of the secret to select from.  Must be a valid secret key
+	Key string `json:"key"`
 }
 
 // HanaExpressSpec defines the desired state of HanaExpress
@@ -34,6 +38,7 @@ type HanaExpressSpec struct {
 
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^\d+Gi$`
+	// PVCSize defines the Persistent volume size attached to the Hana Express StatefulSet
 	PVCSize string `json:"pvcSize"`
 
 	// +kubebuilder:validation:Required

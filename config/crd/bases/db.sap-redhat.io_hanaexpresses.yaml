@@ -36,16 +36,24 @@ spec:
             description: HanaExpressSpec defines the desired state of HanaExpress
             properties:
               credential:
-                description: 'EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-                  NOTE: json tags are required.  Any new fields you add must have
-                  json tags for the fields to be serialized.'
+                description: Credential contains the credential information intended
+                  to be used
                 properties:
+                  key:
+                    description: The key of the secret to select from.  Must be a
+                      valid secret key
+                    type: string
                   name:
+                    description: The Name defines the predefined Kubernetes secret
+                      name for initilizing the users of the Hana Express DB
                     type: string
                 required:
+                - key
                 - name
                 type: object
               pvcSize:
+                description: PVCSize defines the Persistent volume size attached to
+                  the Hana Express StatefulSet
                 pattern: ^\d+Gi$
                 type: string
             required:

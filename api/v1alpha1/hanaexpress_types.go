@@ -22,14 +22,22 @@ import (
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+type Credential struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+}
 
 // HanaExpressSpec defines the desired state of HanaExpress
 type HanaExpressSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of HanaExpress. Edit hanaexpress_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^\d+Gi$`
+	PVCSize string `json:"pvcSize"`
+
+	// +kubebuilder:validation:Required
+	Credential Credential `json:"credential"`
 }
 
 // HanaExpressStatus defines the observed state of HanaExpress

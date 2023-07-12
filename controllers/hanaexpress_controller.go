@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"os"
 	"strings"
@@ -236,6 +237,8 @@ func (r *HanaExpressReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// TODO: allow users to resize pvc
+
 	// The following implementation will update the status
 	meta.SetStatusCondition(&hanaExpress.Status.Conditions, metav1.Condition{Type: typeAvailableHanaExpress,
 		Status: metav1.ConditionTrue, Reason: "Reconciling",
@@ -281,7 +284,7 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 		return nil, err
 	}
 
-	dep := &appsv1.StatefulSet{
+	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hanaExpress.Name,
 			Namespace: hanaExpress.Namespace,
@@ -302,7 +305,7 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resourceQuantity("1Gi"),
+								corev1.ResourceStorage: resourceQuantity(hanaExpress.Spec.PVCSize),
 							},
 						},
 					},
@@ -356,7 +359,7 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 							Name: "hxepasswd",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: "hxepasswd",
+									SecretName: hanaExpress.Spec.Credential.Name,
 									DefaultMode: func() *int32 {
 										mode := int32(0511)
 										return &mode
@@ -436,6 +439,15 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 									MountPath: "/hana/mounts",
 								},
 							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									TCPSocket: &corev1.TCPSocketAction{
+										Port: intstr.FromInt(39017),
+									},
+								},
+								InitialDelaySeconds: 10,
+								PeriodSeconds:       5,
+							},
 						},
 					},
 				},
@@ -445,10 +457,10 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 
 	// Set the ownerRef for the Deployment
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
-	if err := ctrl.SetControllerReference(hanaExpress, dep, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(hanaExpress, sts, r.Scheme); err != nil {
 		return nil, err
 	}
-	return dep, nil
+	return sts, nil
 }
 
 // labelsForHanaExpress returns the labels for selecting the resources

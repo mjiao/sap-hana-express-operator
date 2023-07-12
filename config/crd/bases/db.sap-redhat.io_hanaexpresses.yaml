@@ -35,10 +35,22 @@ spec:
           spec:
             description: HanaExpressSpec defines the desired state of HanaExpress
             properties:
-              foo:
-                description: Foo is an example field of HanaExpress. Edit hanaexpress_types.go
-                  to remove/update
+              credential:
+                description: 'EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+                  NOTE: json tags are required.  Any new fields you add must have
+                  json tags for the fields to be serialized.'
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              pvcSize:
+                pattern: ^\d+Gi$
                 type: string
+            required:
+            - credential
+            - pvcSize
             type: object
           status:
             description: HanaExpressStatus defines the observed state of HanaExpress

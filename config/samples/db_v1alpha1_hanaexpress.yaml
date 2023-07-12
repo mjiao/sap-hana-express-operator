@@ -10,3 +10,6 @@ metadata:
   name: hanaexpress-sample
 spec:
   # TODO(user): Add fields here
+  credential:
+    name: hxepasswd
+  pvcSize: 1Gi

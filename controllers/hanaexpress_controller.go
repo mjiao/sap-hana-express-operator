@@ -64,8 +64,10 @@ type HanaExpressReconciler struct {
 //+kubebuilder:rbac:groups=db.sap-redhat.io,resources=hanaexpresses/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=db.sap-redhat.io,resources=hanaexpresses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+//+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -135,7 +137,9 @@ func (r *HanaExpressReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 			// Perform all operations required before remove the finalizer and allow
 			// the Kubernetes API to remove the custom resource.
-			r.doFinalizerOperationsForHanaExpress(hanaExpress)
+			if err := r.doFinalizerOperationsForHanaExpress(hanaExpress, ctx); err != nil {
+				return ctrl.Result{}, err
+			}
 
 			if err := r.Get(ctx, req.NamespacedName, hanaExpress); err != nil {
 				log.Error(err, "Failed to re-fetch HanaExpress")
@@ -286,12 +290,42 @@ func (r *HanaExpressReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // doFinalizerOperationsForHanaExpress will perform the required operations before delete the CR.
-func (r *HanaExpressReconciler) doFinalizerOperationsForHanaExpress(cr *dbv1alpha1.HanaExpress) {
+func (r *HanaExpressReconciler) doFinalizerOperationsForHanaExpress(cr *dbv1alpha1.HanaExpress, ctx context.Context) error {
+	log := log.FromContext(ctx)
 	r.Recorder.Event(cr, "Warning", "Deleting",
 		fmt.Sprintf("Custom Resource %s is being deleted from the namespace %s",
 			cr.Name,
 			cr.Namespace))
 
+	if cr.Spec.IsDataPersisted {
+		log.Info("Data Persistence is set to 'true'. No PVC cleanup will be performed")
+		return nil
+	}
+
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	err := r.List(context.TODO(), pvcList, client.InNamespace(cr.Namespace), client.MatchingLabels{
+		"app.kubernetes.io/instance": cr.Name,
+	})
+	if err != nil {
+		return err
+	}
+
+	isDeletionFinished := true
+
+	for _, pvc := range pvcList.Items {
+		err = r.Delete(context.TODO(), &pvc)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Error deleting PVC %s: %s\n", pvc.Name, err.Error()))
+			isDeletionFinished = false
+			continue
+		}
+		log.Info(fmt.Sprintf("PVC %s deleted successfully\n", pvc.Name))
+	}
+
+	if !isDeletionFinished {
+		return fmt.Errorf("PVC is not deleted correctly. Please check the above logs for detailed info")
+	}
+	return nil
 }
 
 // statefulSetForHanaExpress returns a HanaExpress StatefulSet object

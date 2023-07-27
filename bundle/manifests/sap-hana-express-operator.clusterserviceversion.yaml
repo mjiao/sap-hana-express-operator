@@ -20,10 +20,10 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    createdAt: "2023-07-12T19:14:54Z"
+    createdAt: "2023-07-16T20:53:02Z"
     operators.operatorframework.io/builder: operator-sdk-v1.30.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
-  name: sap-hana-express-operator.v0.0.1
+  name: sap-hana-express-operator.v0.0.2
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -74,6 +74,18 @@ spec:
           verbs:
           - get
           - list
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - services
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
           - watch
         - apiGroups:
           - db.sap-redhat.io
@@ -268,4 +280,4 @@ spec:
   maturity: alpha
   provider:
     name: SAP LinuxLab - Red Hat
-  version: 0.0.1
+  version: 0.0.2

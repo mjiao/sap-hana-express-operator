@@ -43,6 +43,12 @@ type HanaExpressSpec struct {
 
 	// +kubebuilder:validation:Required
 	Credential Credential `json:"credential"`
+
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default:=false
+	// IsDataPersisted defines the if the Persistent volume attached to the Hana Express StatefulSet
+	// will be preserved after deleting CR Hana Express
+	IsDataPersisted bool `json:"isDataPersisted"`
 }
 
 // HanaExpressStatus defines the observed state of HanaExpress

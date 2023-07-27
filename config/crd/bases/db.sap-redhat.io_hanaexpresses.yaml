@@ -51,6 +51,12 @@ spec:
                 - key
                 - name
                 type: object
+              isDataPersisted:
+                default: false
+                description: IsDataPersisted defines the if the Persistent volume
+                  attached to the Hana Express StatefulSet will be preserved after
+                  deleting CR Hana Express
+                type: boolean
               pvcSize:
                 description: PVCSize defines the Persistent volume size attached to
                   the Hana Express StatefulSet
@@ -58,6 +64,7 @@ spec:
                 type: string
             required:
             - credential
+            - isDataPersisted
             - pvcSize
             type: object
           status:

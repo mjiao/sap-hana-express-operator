@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Git Commit Rules
 - Never commit with user "claude"
 - Use the existing git configuration (mjiao <manjun.jiao@gmail.com>)
+- Do not include Claude Code attribution in commit messages
 
 ## Common Development Commands
 

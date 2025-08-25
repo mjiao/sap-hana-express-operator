@@ -1,80 +1,273 @@
-# sap-hana-express-operator
-Operator for managing the lifecycle of SAP Hana Express running on Kubernetes platform.
+# SAP HANA Express Operator
 
-## Description
-Maintaining the SAP Hana Express Operator for deploying, updating, deleting the objects on Kubernetes.
+A Kubernetes Operator for managing the lifecycle of SAP HANA Express Edition deployments on Kubernetes platforms.
 
-## Getting Started
-You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
-**Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
+## Overview
 
-### Running on the cluster
-1. Install Instances of Custom Resources:
+SAP HANA Express Edition is a streamlined version of SAP HANA for development, testing, and learning purposes. This operator automates the deployment, configuration, and management of HANA Express instances in Kubernetes environments.
 
-```sh
-kubectl apply -f config/samples/
+**Key Features:**
+- Automated StatefulSet and Service provisioning
+- Persistent volume management with configurable retention policies
+- Secure credential management through Kubernetes secrets
+- Multi-port service exposure for HANA database access
+- Proper security context and permission handling
+- Finalizer-based cleanup operations
+
+## Architecture
+
+The operator manages:
+- **StatefulSet**: Runs HANA Express containers with persistent storage
+- **Service**: Exposes database ports (39013, 39017, 39041, 59013, 8090) 
+- **PersistentVolumeClaims**: Handles data persistence with optional cleanup
+- **Security**: Non-root containers with proper user/group settings (12000:79)
+
+## Prerequisites
+
+- Kubernetes cluster (1.19+)
+- kubectl configured to access your cluster
+- Container registry access for custom images (if building locally)
+- Sufficient cluster resources for HANA Express workloads
+
+## Quick Start
+
+### 1. Install the Operator
+
+```bash
+# Install CRDs
+make install
+
+# Deploy the operator to your cluster
+make deploy IMG=quay.io/redhat-sap-cop/sap-hana-express-operator:latest
 ```
 
-2. Build and push your image to the location specified by `IMG`:
+### 2. Create Required Secrets
 
-```sh
-make docker-build docker-push IMG=<some-registry>/sap-hana-express-operator:tag
+Create a secret containing HANA master password:
+
+```bash
+# Create secret with HANA credentials
+kubectl create secret generic hxepasswd \
+  --from-literal=hxepasswd.json='{"master_password": "YourSecurePassword123"}'
 ```
 
-3. Deploy the controller to the cluster with the image specified by `IMG`:
-
-```sh
-make deploy IMG=<some-registry>/sap-hana-express-operator:tag
+Or apply the provided sample:
+```bash
+kubectl apply -f config/samples/secret_hxepasswd.yaml
 ```
 
-### Uninstall CRDs
-To delete the CRDs from the cluster:
+### 3. Deploy HANA Express Instance
 
-```sh
-make uninstall
+```bash
+# Create a HanaExpress instance
+kubectl apply -f config/samples/db_v1alpha1_hanaexpress.yaml
 ```
 
-### Undeploy controller
-UnDeploy the controller from the cluster:
+### 4. Verify Deployment
 
-```sh
+```bash
+# Check the HanaExpress status
+kubectl get hanaexpress
+
+# Check StatefulSet and Pods
+kubectl get statefulsets,pods
+
+# Check Service
+kubectl get services
+```
+
+## Configuration
+
+### HanaExpress Custom Resource
+
+```yaml
+apiVersion: db.sap-redhat.io/v1alpha1
+kind: HanaExpress
+metadata:
+  name: my-hana-instance
+spec:
+  # Required: PVC size (must match pattern ^\d+Gi$)
+  pvcSize: "50Gi"
+  
+  # Required: Reference to secret containing HANA credentials
+  credential:
+    name: hxepasswd           # Secret name
+    key: hxepasswd.json       # Key within secret
+  
+  # Optional: Whether to preserve data when CR is deleted (default: false)
+  isDataPersisted: true
+```
+
+### Configuration Options
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pvcSize` | string | Yes | Persistent volume size (e.g., "1Gi", "50Gi") |
+| `credential.name` | string | Yes | Name of Kubernetes secret containing credentials |
+| `credential.key` | string | Yes | Key within the secret containing JSON credentials |
+| `isDataPersisted` | boolean | No | Preserve PVC when HanaExpress is deleted (default: false) |
+
+### Environment Variables
+
+The operator requires the following environment variable:
+
+- `HANAEXPRESS_IMAGE`: Container image for SAP HANA Express Edition
+
+## Usage Examples
+
+### Development Instance (Small)
+```yaml
+apiVersion: db.sap-redhat.io/v1alpha1
+kind: HanaExpress
+metadata:
+  name: hana-dev
+spec:
+  pvcSize: "10Gi"
+  credential:
+    name: hxepasswd
+    key: hxepasswd.json
+  isDataPersisted: false
+```
+
+### Production Instance (Large)
+```yaml
+apiVersion: db.sap-redhat.io/v1alpha1
+kind: HanaExpress
+metadata:
+  name: hana-prod
+spec:
+  pvcSize: "500Gi"
+  credential:
+    name: hana-prod-credentials
+    key: master_password.json
+  isDataPersisted: true
+```
+
+## Accessing HANA Express
+
+Once deployed, connect to HANA Express using:
+- **Host**: Service name (e.g., `hana-dev.default.svc.cluster.local`)
+- **Ports**: 39013 (SQL), 39017 (SQL), 39041 (XSA), 8090 (Cockpit)
+- **Credentials**: From the configured secret
+
+### Port Forwarding for Local Access
+```bash
+# Forward SQL port for local connections
+kubectl port-forward service/hana-dev 39017:39017
+
+# Connect using HANA Studio or SQL client
+# Host: localhost:39017
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Pod stuck in Pending state:**
+- Check if PVC can be provisioned: `kubectl get pvc`
+- Verify storage class exists and has available capacity
+- Check node resources: `kubectl describe nodes`
+
+**Pod fails with permission errors:**
+- Ensure the HANA Express image supports non-root execution
+- Verify the init container completed successfully
+- Check security context settings in the StatefulSet
+
+**Secret not found errors:**
+- Verify secret exists: `kubectl get secret hxepasswd`
+- Check secret has the correct key specified in credential.key
+- Ensure secret is in the same namespace as HanaExpress resource
+
+**HANA startup issues:**
+- Check pod logs: `kubectl logs <pod-name> -c hana-express`
+- Verify password format in secret matches HANA requirements
+- Check available memory and CPU resources
+
+### Monitoring
+
+Monitor HanaExpress instances:
+
+```bash
+# Check HanaExpress status
+kubectl get hanaexpress -o wide
+
+# View operator logs
+kubectl logs -n sap-hana-express-operator-system deployment/sap-hana-express-operator-controller-manager
+
+# Check StatefulSet status
+kubectl describe statefulset <hanaexpress-name>
+
+# Monitor pod resources
+kubectl top pods
+```
+
+### Cleanup
+
+```bash
+# Delete HanaExpress instance (preserves data if isDataPersisted: true)
+kubectl delete hanaexpress <instance-name>
+
+# Uninstall operator
 make undeploy
+
+# Remove CRDs
+make uninstall
+
+# Manual PVC cleanup (if needed)
+kubectl delete pvc data-<instance-name>-0
 ```
 
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+## Development
 
-### How it works
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
+### Local Development
 
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
-which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-### Test It Out
-1. Install the CRDs into the cluster:
-
-```sh
+1. Install dependencies:
+```bash
 make install
 ```
 
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
+2. Run controller locally:
+```bash
 make run
 ```
 
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Modifying the API definitions
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
-
-```sh
-make manifests
+3. Run tests:
+```bash
+make test
 ```
 
-**NOTE:** Run `make --help` for more information on all potential `make` targets
+### Building Custom Images
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+```bash
+# Build and push operator image
+make docker-build docker-push IMG=<your-registry>/sap-hana-express-operator:tag
+
+# Deploy with custom image
+make deploy IMG=<your-registry>/sap-hana-express-operator:tag
+```
+
+### API Modifications
+
+When modifying the API (api/v1alpha1/hanaexpress_types.go):
+
+```bash
+# Regenerate manifests and code
+make manifests generate
+
+# Update CRDs in cluster
+make install
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Run the test suite: `make test`
+6. Submit a pull request
+
+For more information, see the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html).
 
 ## License
 

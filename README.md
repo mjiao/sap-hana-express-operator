@@ -43,16 +43,26 @@ make deploy IMG=quay.io/redhat-sap-cop/sap-hana-express-operator:latest
 
 ### 2. Create Required Secrets
 
-Create a secret containing HANA master password:
-
+**Option A: Simple Plain Text Password (Recommended)**
 ```bash
-# Create secret with HANA credentials
+# Create secret with plain text password (simpler)
+kubectl create secret generic hana-password \
+  --from-literal=master-password='YourSecurePassword123'
+```
+
+**Option B: JSON Format (Advanced)**
+```bash
+# Create secret with JSON credentials (for complex setups)
 kubectl create secret generic hxepasswd \
   --from-literal=hxepasswd.json='{"master_password": "YourSecurePassword123"}'
 ```
 
-Or apply the provided sample:
+Or apply the provided samples:
 ```bash
+# Plain text format
+kubectl apply -f config/samples/secret_hana_plaintext.yaml
+
+# JSON format
 kubectl apply -f config/samples/secret_hxepasswd.yaml
 ```
 
@@ -91,8 +101,10 @@ spec:
   
   # Required: Reference to secret containing HANA credentials
   credential:
-    name: hxepasswd           # Secret name
-    key: hxepasswd.json       # Key within secret
+    secretKeyRef:
+      name: hana-password     # Secret name
+      key: master-password    # Key within secret
+    format: plain             # Can be 'plain' or 'json'
   
   # Optional: Whether to preserve data when CR is deleted (default: false)
   isDataPersisted: true
@@ -103,8 +115,9 @@ spec:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `pvcSize` | string | Yes | Persistent volume size (e.g., "1Gi", "50Gi") |
-| `credential.name` | string | Yes | Name of Kubernetes secret containing credentials |
-| `credential.key` | string | Yes | Key within the secret containing JSON credentials |
+| `credential.secretKeyRef.name` | string | Yes | Name of Kubernetes secret containing credentials |
+| `credential.secretKeyRef.key` | string | Yes | Key within the secret containing password |
+| `credential.format` | string | No | Format of credential data: "plain" or "json" (default: "plain") |
 | `isDataPersisted` | boolean | No | Preserve PVC when HanaExpress is deleted (default: false) |
 
 ### Environment Variables
@@ -115,7 +128,7 @@ The operator requires the following environment variable:
 
 ## Usage Examples
 
-### Development Instance (Small)
+### Development Instance (Simple Plain Text)
 ```yaml
 apiVersion: db.sap-redhat.io/v1alpha1
 kind: HanaExpress
@@ -124,12 +137,14 @@ metadata:
 spec:
   pvcSize: "10Gi"
   credential:
-    name: hxepasswd
-    key: hxepasswd.json
+    secretKeyRef:
+      name: hana-password
+      key: master-password
+    format: plain  # Simple plain text password
   isDataPersisted: false
 ```
 
-### Production Instance (Large)
+### Production Instance (JSON Format)
 ```yaml
 apiVersion: db.sap-redhat.io/v1alpha1
 kind: HanaExpress
@@ -138,8 +153,10 @@ metadata:
 spec:
   pvcSize: "500Gi"
   credential:
-    name: hana-prod-credentials
-    key: master_password.json
+    secretKeyRef:
+      name: hana-prod-credentials
+      key: credentials.json
+    format: json  # JSON format for complex credentials
   isDataPersisted: true
 ```
 

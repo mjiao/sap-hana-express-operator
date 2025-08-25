@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -52,6 +53,98 @@ const (
 	// typeDegradedHanaExpress represents the status used when the custom resource is deleted and the finalizer operations must occur.
 	typeDegradedHanaExpress = "Degraded"
 )
+
+// validateSecret validates that the referenced secret exists and contains the required key
+func (r *HanaExpressReconciler) validateSecret(ctx context.Context, hanaExpress *dbv1alpha1.HanaExpress) error {
+	log := log.FromContext(ctx)
+
+	secret := &corev1.Secret{}
+	secretKey := types.NamespacedName{
+		Name:      hanaExpress.Spec.Credential.SecretKeyRef.Name,
+		Namespace: hanaExpress.Namespace,
+	}
+
+	if err := r.Get(ctx, secretKey, secret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("secret %s not found in namespace %s", secretKey.Name, secretKey.Namespace)
+		}
+		return fmt.Errorf("failed to get secret %s: %w", secretKey.Name, err)
+	}
+
+	key := hanaExpress.Spec.Credential.SecretKeyRef.Key
+	if _, exists := secret.Data[key]; !exists {
+		return fmt.Errorf("key %s not found in secret %s", key, secretKey.Name)
+	}
+
+	// Validate credential format if JSON is specified
+	if hanaExpress.Spec.Credential.Format == "json" {
+		credentialData := secret.Data[key]
+		var jsonData map[string]interface{}
+		if err := json.Unmarshal(credentialData, &jsonData); err != nil {
+			return fmt.Errorf("credential data is not valid JSON: %w", err)
+		}
+
+		// Check for required master_password field in JSON
+		if _, exists := jsonData["master_password"]; !exists {
+			return fmt.Errorf("JSON credential must contain 'master_password' field")
+		}
+	}
+
+	log.Info("Secret validation successful", "secret", secretKey.Name, "key", key)
+	return nil
+}
+
+// getPasswordFilePath returns the file path for the password based on credential format
+func (r *HanaExpressReconciler) getPasswordFilePath(hanaExpress *dbv1alpha1.HanaExpress) string {
+	key := hanaExpress.Spec.Credential.SecretKeyRef.Key
+
+	// Default to plain format if not specified
+	format := hanaExpress.Spec.Credential.Format
+	if format == "" {
+		format = "plain"
+	}
+
+	switch format {
+	case "json":
+		return "file:///hana/mounts/" + key
+	case "plain":
+		// For plain text, we need to create a JSON file dynamically in the init container
+		return "file:///hana/mounts/hxepasswd.json"
+	default:
+		return "file:///hana/mounts/" + key
+	}
+}
+
+// getInitContainerCommand returns the command for the init container based on credential format
+func (r *HanaExpressReconciler) getInitContainerCommand(hanaExpress *dbv1alpha1.HanaExpress) []string {
+	key := hanaExpress.Spec.Credential.SecretKeyRef.Key
+
+	// Default to plain format if not specified
+	format := hanaExpress.Spec.Credential.Format
+	if format == "" {
+		format = "plain"
+	}
+
+	switch format {
+	case "json":
+		// For JSON format, just copy the file as-is
+		return []string{"sh", "-c", "cp /tmp/mounts/* /hana/mounts && chown -R 12000:79 /hana/mounts"}
+	case "plain":
+		// For plain text format, create a JSON file with the password
+		return []string{"sh", "-c", fmt.Sprintf(`
+			# Copy all files first
+			cp /tmp/mounts/* /hana/mounts/
+			
+			# Create JSON credential file from plain text password
+			echo "{\"master_password\": \"$(cat /tmp/mounts/%s)\"}" > /hana/mounts/hxepasswd.json
+			
+			# Set proper ownership
+			chown -R 12000:79 /hana/mounts
+		`, key)}
+	default:
+		return []string{"sh", "-c", "cp /tmp/mounts/* /hana/mounts && chown -R 12000:79 /hana/mounts"}
+	}
+}
 
 // HanaExpressReconciler reconciles a HanaExpress object
 type HanaExpressReconciler struct {
@@ -117,6 +210,27 @@ func (r *HanaExpressReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			log.Error(err, "Failed to update custom resource to add finalizer")
 			return ctrl.Result{}, err
 		}
+	}
+
+	// Validate the referenced secret before proceeding
+	if err := r.validateSecret(ctx, hanaExpress); err != nil {
+		log.Error(err, "Secret validation failed")
+
+		// Update status to reflect validation failure
+		meta.SetStatusCondition(&hanaExpress.Status.Conditions, metav1.Condition{
+			Type:    typeAvailableHanaExpress,
+			Status:  metav1.ConditionFalse,
+			Reason:  "SecretValidationFailed",
+			Message: fmt.Sprintf("Secret validation failed: %s", err.Error()),
+		})
+
+		if statusErr := r.Status().Update(ctx, hanaExpress); statusErr != nil {
+			log.Error(statusErr, "Failed to update HanaExpress status")
+			return ctrl.Result{}, statusErr
+		}
+
+		// Requeue after 30 seconds to retry validation
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Check if the HanaExpress instance is marked to be deleted, which is
@@ -415,7 +529,7 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 							Name: "hxepasswd",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: hanaExpress.Spec.Credential.Name,
+									SecretName: hanaExpress.Spec.Credential.SecretKeyRef.Name,
 									DefaultMode: func() *int32 {
 										mode := int32(0511)
 										return &mode
@@ -429,7 +543,7 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 						{
 							Image:   "registry.access.redhat.com/ubi8/ubi:8.5-239.1651231664",
 							Name:    "set-data-dir-ownership",
-							Command: []string{"sh", "-c", "cp /tmp/mounts/* /hana/mounts && chown -R 12000:79 /hana/mounts"},
+							Command: r.getInitContainerCommand(hanaExpress),
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "hxepasswd",
@@ -484,7 +598,7 @@ func (r *HanaExpressReconciler) statefulSetForHanaExpress(
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
-							Command: []string{"/run_hana", "--passwords-url", "file:///hana/mounts/" + hanaExpress.Spec.Credential.Key, "--agree-to-sap-license"},
+							Command: []string{"/run_hana", "--passwords-url", r.getPasswordFilePath(hanaExpress), "--agree-to-sap-license"},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "hxepasswd",

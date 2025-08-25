@@ -17,18 +17,19 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Credential contains the credential information intended to be used
 type Credential struct {
 	// +kubebuilder:validation:Required
-	// The Name defines the predefined Kubernetes secret name for initilizing the users of the Hana Express DB
-	Name string `json:"name"`
+	// SecretKeyRef references a key within a Secret that contains the HANA master password
+	SecretKeyRef corev1.SecretKeySelector `json:"secretKeyRef"`
 
-	// +kubebuilder:validation:Required
-	// The key of the secret to select from.  Must be a valid secret key
-	Key string `json:"key"`
+	// +kubebuilder:validation:Optional
+	// Format specifies the format of the credential data (json or plain, defaults to plain)
+	Format string `json:"format,omitempty"`
 }
 
 // HanaExpressSpec defines the desired state of HanaExpress

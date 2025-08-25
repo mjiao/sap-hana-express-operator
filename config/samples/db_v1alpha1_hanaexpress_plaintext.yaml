@@ -1,0 +1,17 @@
+apiVersion: db.sap-redhat.io/v1alpha1
+kind: HanaExpress
+metadata:
+  name: hanaexpress-plaintext-sample
+spec:
+  # PVC size for persistent storage (required)
+  pvcSize: "10Gi"
+  
+  # Credential reference using plain text password format
+  credential:
+    secretKeyRef:
+      name: hana-plain-password
+      key: master-password
+    format: plain  # Plain text password will be converted to JSON automatically
+  
+  # Whether to preserve data when the HanaExpress resource is deleted
+  isDataPersisted: false
